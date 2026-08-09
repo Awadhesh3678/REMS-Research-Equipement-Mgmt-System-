@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<!--
+  FILE: home.html
+  FUNCTIONALITY: The structural HTML layout for the main REMS Equipment Catalog.
+  It includes the search bar, the hidden QR scanner modal, and the empty grid 
+  container where equipment cards are dynamically injected by Javascript.
+-->
+<html lang="en">
+
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <!-- Force viewport scaling for mobile -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>REMS - Home Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Include external html5-qrcode library for native scanning -->
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+
+  <!-- Include Modular CSS -->
+  <?!= include('home_css'); ?>
+</head>
+
+<body>
+
+  <!-- Background Animated Gradients -->
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+
+  <!-- Header & Search -->
+  <header class="header glass">
+    <div class="header-content">
+      <h1>REMS Dashboard</h1>
+      <p>Search or scan to manage R&D equipment.</p>
+
+
+
+      <div class="search-container">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="searchInput" placeholder="Search equipment by name or ID...">
+      </div>
+    </div>
+  </header>
+
+  <!-- Loading State -->
+  <div id="loading" class="loading-container glass">
+    <div class="spinner"></div>
+    <p>Loading catalog...</p>
+  </div>
+
+  <!-- Main Grid -->
+  <main class="container">
+    <div id="equipmentGrid" class="grid">
+      <!-- Cards will be dynamically injected here -->
+    </div>
+  </main>
+
+  <!-- Floating Scan Button (PhonePe Style) -->
+  <button id="scanFab" class="scan-fab glass">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+      stroke-linejoin="round">
+      <path d="M3 7V5a2 2 0 0 1 2-2h2"></path>
+      <path d="M17 3h2a2 2 0 0 1 2 2v2"></path>
+      <path d="M21 17v2a2 2 0 0 1-2 2h-2"></path>
+      <path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>
+      <rect x="7" y="7" width="10" height="10"></rect>
+    </svg>
+    Scan QR
+  </button>
+
+  <!-- Camera Scanner Modal -->
+  <div id="scannerModal" class="modal-overlay hidden">
+    <div class="modal glass">
+      <div class="modal-header">
+        <h2>Scan Equipment QR</h2>
+        <button id="closeScanner" class="close-btn">&times;</button>
+      </div>
+      <div class="scanner-container">
+        <div id="reader"></div>
+      </div>
+      <p class="scanner-hint">Point your camera at a REMS QR code</p>
+    </div>
+  </div>
+
+  <!-- Modular JS -->
+  <script>
+    // Safely inject the Web App URL from the server config
+    const GLOBAL_WEB_APP_URL = "<?= CONFIG.WEB_APP_URL ?>";
+  </script>
+  <?!= include('home_javascript'); ?>
+
+</body>
+
+</html>

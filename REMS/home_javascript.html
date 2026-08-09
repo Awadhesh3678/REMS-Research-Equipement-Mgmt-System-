@@ -1,0 +1,222 @@
+<script>
+  /**
+   * FILE: home_javascript.html
+   * FUNCTIONALITY: Contains the client-side logic for the Home Dashboard.
+   * Fetches equipment catalog data from the backend, handles dynamic UI rendering of cards, 
+   * search filtering, and manages the HTML5 QR Code scanner.
+   */
+  let equipmentData = [];
+  let html5QrcodeScanner = null;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    console.log("DOM loaded. Initializing Home Dashboard...");
+    loadEquipment();
+    
+    // Search listener
+    document.getElementById('searchInput').addEventListener('input', (e) => {
+      renderGrid(e.target.value);
+    });
+
+    // Scanner Modal Listeners
+    document.getElementById('scanFab').addEventListener('click', openScanner);
+    document.getElementById('closeScanner').addEventListener('click', closeScanner);
+  });
+
+  // --- Grid Logic ---
+
+  /**
+   * Fetches the full equipment catalog from the backend and initializes the grid.
+   */
+  function loadEquipment() {
+    console.log("Calling backend apiGetAllEquipmentStatus...");
+    google.script.run
+      .withSuccessHandler(data => {
+        if (data.error) {
+          document.getElementById('loading').innerHTML = '<p style="color:red">Error: ' + data.error + '</p>';
+          return;
+        }
+        equipmentData = data;
+        document.getElementById('loading').style.display = 'none';
+        renderGrid();
+      })
+      .withFailureHandler(error => {
+        document.getElementById('loading').innerHTML = '<p style="color:red">Server Error: ' + error.message + '<br><br>Make sure you deployed a "New version" of the Web App!</p>';
+      })
+      .apiGetAllEquipmentStatus();
+  }
+
+  /**
+   * Escapes HTML special characters to prevent XSS attacks.
+   * @param {string} str - The raw string to sanitize.
+   * @returns {string} The sanitized string safe for HTML injection.
+   */
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  /**
+   * Renders the equipment cards into the DOM.
+   * @param {string} filterText - Optional text to filter equipment by name or ID.
+   */
+  function renderGrid(filterText = '') {
+    const grid = document.getElementById('equipmentGrid');
+    grid.innerHTML = '';
+    
+    const lowerFilter = filterText.toLowerCase();
+    
+    const filtered = equipmentData.filter(eq => 
+      (eq.equipmentName && eq.equipmentName.toLowerCase().includes(lowerFilter)) ||
+      (eq.equipmentId && eq.equipmentId.toLowerCase().includes(lowerFilter))
+    );
+
+    if (filtered.length === 0) {
+      grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 2rem;">No equipment found matching "${escapeHtml(filterText)}".</div>`;
+      return;
+    }
+
+    filtered.forEach(eq => {
+      // Determine badge class — normalize to lowercase for safe comparison
+      const status = (eq.currentStatus || '').toLowerCase();
+      let badgeClass = 'status-available';
+      if (status === 'using' || status === 'in use' || status === 'reserved') badgeClass = 'status-in-use';
+      if (status === 'maintenance') badgeClass = 'status-maintenance';
+
+      // Link to the specific status page using the absolute URL
+      const targetUrl = GLOBAL_WEB_APP_URL + "?equipment_id=" + encodeURIComponent(eq.equipmentId);
+      
+      // Generate visual QR code for the card using QuickChart
+      const qrApiUrl = "https://quickchart.io/qr?size=150x150&text=" + encodeURIComponent(eq.equipmentId);
+
+      // Escape all dynamic values to prevent XSS
+      const safeName     = escapeHtml(eq.equipmentName || 'Unknown');
+      const safeId       = escapeHtml(eq.equipmentId);
+      const safeStatus   = escapeHtml(eq.currentStatus);
+      const safeLocation = escapeHtml(eq.location || 'Unknown Location');
+      const safeCategory = escapeHtml(eq.category || 'General');
+
+      const cardHTML = 
+        '<a href="' + targetUrl + '" class="card">' +
+          '<div class="card-header">' +
+            '<div>' +
+              '<div class="card-title">' + safeName + '</div>' +
+              '<div class="card-subtitle">' + safeId + '</div>' +
+            '</div>' +
+            '<span class="status-badge ' + badgeClass + '">' + safeStatus + '</span>' +
+          '</div>' +
+          '<div class="card-details">' +
+            '<div class="detail-row">' +
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>' +
+                '<circle cx="12" cy="10" r="3"></circle>' +
+              '</svg>' +
+              safeLocation +
+            '</div>' +
+            '<div class="detail-row">' +
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                '<rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>' +
+                '<path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>' +
+              '</svg>' +
+              safeCategory +
+            '</div>' +
+          '</div>' +
+          '<div class="card-footer">' +
+            '<img src="' + qrApiUrl + '" class="qr-mini" alt="QR Code">' +
+            '<span class="action-text">' +
+              'View Dashboard ' +
+              '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">' +
+                '<line x1="5" y1="12" x2="19" y2="12"></line>' +
+                '<polyline points="12 5 19 12 12 19"></polyline>' +
+              '</svg>' +
+            '</span>' +
+          '</div>' +
+        '</a>';
+      
+      grid.insertAdjacentHTML('beforeend', cardHTML);
+    });
+  }
+
+  // --- HTML5 Native Scanner Logic ---
+
+  /**
+   * Opens the QR scanner modal and initializes the HTML5Qrcode camera interface.
+   * Prompts the user for camera permissions if not already granted.
+   */
+  function openScanner() {
+    document.getElementById('scannerModal').classList.add('active');
+    
+    // Initialize Scanner if not already done
+    if (!html5QrcodeScanner) {
+      html5QrcodeScanner = new Html5Qrcode("reader");
+    }
+    
+    // Start scanning
+    const config = { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 };
+    
+    // Use environment facing camera (back camera on mobile)
+    html5QrcodeScanner.start({ facingMode: "environment" }, config, onScanSuccess, onScanFailure)
+      .catch(err => {
+        console.error("Camera error:", err);
+        alert("Could not access camera. Please ensure you have granted camera permissions.");
+        closeScanner();
+      });
+  }
+
+  /**
+   * Closes the QR scanner modal and cleanly stops the camera feed to save battery.
+   */
+  function closeScanner() {
+    document.getElementById('scannerModal').classList.remove('active');
+    if (html5QrcodeScanner && html5QrcodeScanner.isScanning) {
+      html5QrcodeScanner.stop().catch(err => console.error("Failed to stop scanner", err));
+    }
+  }
+
+  /**
+   * Callback fired when the camera successfully reads a QR code.
+   * Parses the URL to extract the equipment ID and redirects the user.
+   * @param {string} decodedText - The raw text read from the QR code.
+   */
+  function onScanSuccess(decodedText, decodedResult) {
+    // Stop scanning immediately to prevent multiple triggers
+    if (html5QrcodeScanner.isScanning) {
+      html5QrcodeScanner.stop();
+    }
+    
+    // The scanned text is expected to be the full Web App URL containing ?equipment_id=EQ001
+    // or just the ID itself if someone generated a raw QR code.
+    // We will parse it intelligently.
+    
+    let targetId = decodedText;
+    
+    try {
+      // Check if it's a full URL
+      if (decodedText.startsWith("http")) {
+        const url = new URL(decodedText);
+        if (url.searchParams.has('equipment_id')) {
+          targetId = url.searchParams.get('equipment_id');
+        }
+      }
+    } catch(e) {
+      // Not a URL, maybe it's just the raw ID text. We'll proceed with targetId.
+    }
+    
+    // Redirect the user to the status page for this ID using the absolute URL
+    window.location.href = GLOBAL_WEB_APP_URL + "?equipment_id=" + encodeURIComponent(targetId);
+  }
+
+  /**
+   * Callback fired continuously while scanning fails (which happens every frame until a code is found).
+   * It is intentionally empty to prevent spamming the console.
+   */
+  function onScanFailure(error) {
+    // parse errors happen constantly as the camera searches for a QR code. 
+    // We safely ignore them.
+  }
+
+</script>

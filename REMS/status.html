@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<!--
+  FILE: status.html
+  FUNCTIONALITY: The structural HTML layout for the individual Equipment Status page.
+  This is a Single Page Application (SPA) containing multiple nested hidden "screens" 
+  (Landing, Manage, Book, Withdraw) that are selectively revealed by Javascript.
+-->
+<html lang="en">
+
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description"
+    content="REMS – Research Equipment Management System. Scan QR to check in, book, or manage your equipment session.">
+  <title>REMS – Equipment Booking</title>
+  <?!= include('css'); ?>
+</head>
+
+<body>
+
+  <script>
+    // Sanitize the equipment ID from URL parameter — strip anything that isn't alphanumeric, hyphen, or underscore
+    const EQUIPMENT_ID = '<?= equipmentId ?>'.replace(/[^a-zA-Z0-9\-_]/g, '');
+  </script>
+
+  <div class="container">
+
+    <!-- ======================== HEADER ======================== -->
+    <header class="header">
+      <!-- Top-of-header indeterminate progress bar -->
+      <div class="progress-bar-track" id="progressBar">
+        <div class="progress-bar-fill"></div>
+      </div>
+
+      <button class="header-back"
+        onclick="if(!document.getElementById('screen-landing').classList.contains('hidden')) { window.open('<?= webAppUrl ?>', '_top'); } else { showScreen('screen-landing'); }"
+        aria-label="Go back">
+        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+        </svg>
+      </button>
+      <div class="header-title-container">
+        <h1>REMS</h1>
+        <p class="header-sub">Research Equipment Management System</p>
+      </div>
+      <div style="display: flex; gap: 15px; align-items: center;">
+        <a href="<?= webAppUrl ?>" class="header-avatar" aria-label="Home"
+          style="cursor: pointer; text-decoration: none;" title="Back to Home">
+          <svg width="22" height="22" fill="none" stroke="white" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 22V12h6v10" />
+          </svg>
+        </a>
+        <a href="<?= webAppUrl ?>?page=profile&from=<?= equipmentId ?>" id="headerProfileIcon"
+          class="header-avatar hidden" aria-label="User Profile" style="text-decoration: none; cursor: pointer;">
+          <svg width="20" height="20" fill="none" stroke="white" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z" />
+          </svg>
+        </a>
+      </div>
+    </header>
+
+    <!-- ======================== FEEDBACK TOAST ======================== -->
+    <div id="feedbackMsg" class="message hidden" role="alert" aria-live="polite"></div>
+
+    <!-- ============================================================
+         ACTION OVERLAY — used for all server calls after initial load
+         (Free Equipment, Book, Extend, Withdraw, Check-in lookup)
+    ============================================================ -->
+    <div id="screen-loading" class="action-overlay hidden" role="status" aria-label="Processing">
+      <div class="overlay-card">
+        <div class="loading-step-wrap">
+          <div class="orbit-ring">
+            <div class="orbit-ring-inner"></div>
+          </div>
+          <p class="loading-step-label" id="overlay-label">Processing…</p>
+          <p class="loading-step-sub" id="overlay-sub">Please wait a moment</p>
+          <div class="dot-row">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         SCREEN — SKELETON  (shown on first page load)
+         Mirrors the exact layout of screen-landing with shimmer blocks
+    ============================================================ -->
+    <div id="screen-skeleton">
+
+      <!-- skeleton: status card -->
+      <div class="card sk-status-card" style="margin-top:18px;">
+        <div class="sk-status-inner">
+          <div class="sk-status-left">
+            <span class="sk sk-dark sk-h10 sk-w40" style="border-radius:6px;"></span>
+            <span class="sk sk-dark sk-h22 sk-w70" style="border-radius:8px; margin-top:4px;"></span>
+            <span class="sk sk-dark sk-h10 sk-w55" style="border-radius:6px; margin-top:6px;"></span>
+          </div>
+          <div class="sk-badge-wrap">
+            <span class="sk sk-dark" style="width:90px; height:30px; border-radius:50px;"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- skeleton: profile card -->
+      <div class="card">
+        <span class="sk sk-h10 sk-w40" style="margin-bottom:16px;"></span>
+        <div class="sk-profile-grid">
+          <div class="sk-chip">
+            <span class="sk sk-chip-icon"></span>
+            <div class="sk-chip-text">
+              <span class="sk sk-h8" style="width:36px; border-radius:4px;"></span>
+              <span class="sk sk-h12 sk-w80" style="border-radius:6px;"></span>
+            </div>
+          </div>
+          <div class="sk-chip">
+            <span class="sk sk-chip-icon"></span>
+            <div class="sk-chip-text">
+              <span class="sk sk-h8" style="width:50px; border-radius:4px;"></span>
+              <span class="sk sk-h12 sk-w70" style="border-radius:6px;"></span>
+            </div>
+          </div>
+          <!-- full-width chip -->
+          <div class="sk-chip" style="grid-column: 1/-1;">
+            <span class="sk sk-chip-icon"></span>
+            <div class="sk-chip-text">
+              <span class="sk sk-h8" style="width:44px; border-radius:4px;"></span>
+              <span class="sk sk-h12 sk-w55" style="border-radius:6px;"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- skeleton: check-in card -->
+      <div class="card">
+        <span class="sk sk-h10 sk-w40" style="margin-bottom:14px;"></span>
+        <span class="sk sk-h10 sk-w40" style="border-radius:4px; margin-bottom:8px;"></span>
+        <span class="sk sk-input sk-w100" style="margin-bottom:16px;"></span>
+        <span class="sk sk-btn sk-w100"></span>
+      </div>
+
+    </div><!-- /screen-skeleton -->
+
+
+    <!-- ============================================================
+         SCREEN 2 — LANDING / STATUS DASHBOARD
+    ============================================================ -->
+    <div id="screen-landing" class="hidden screen-panel">
+
+      <div class="card status-card">
+        <div class="status-inner">
+          <div class="status-left">
+            <div class="card-label" style="color: rgba(163,201,226,0.75);">
+              <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" />
+              </svg>
+              Equipment Status
+            </div>
+            <div class="status-eq-name" id="ui-eqName">—</div>
+            <div class="status-eq-meta">
+              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span id="ui-eqLocation">—</span>&nbsp;·&nbsp;<span id="ui-eqCategory">—</span>
+            </div>
+          </div>
+          <div class="status-pill-wrap">
+            <div id="ui-quickStatus" class="status-badge">
+              <span class="status-dot"></span>AVAILABLE
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card queue-card" id="ui-queueContainer" style="display:none;">
+        <div class="card-label queue-label">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          Waitlist
+        </div>
+        <div class="queue-count-row">
+          <div class="queue-number" id="ui-queueCount">0</div>
+          <div class="queue-desc">people are waiting<br>for this equipment</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
+          </svg>
+          Equipment Profile
+        </div>
+        <div class="profile-grid">
+          <div class="profile-chip">
+            <div class="profile-chip-icon">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v8l9-11h-7z" />
+              </svg>
+            </div>
+            <div class="profile-chip-text">
+              <div class="profile-chip-label">Name</div>
+              <div class="profile-chip-value" id="pc-eqName">—</div>
+            </div>
+          </div>
+          <div class="profile-chip">
+            <div class="profile-chip-icon">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div class="profile-chip-text">
+              <div class="profile-chip-label">Category</div>
+              <div class="profile-chip-value" id="pc-eqCategory">—</div>
+            </div>
+          </div>
+          <div class="profile-chip full">
+            <div class="profile-chip-icon">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+            </div>
+            <div class="profile-chip-text">
+              <div class="profile-chip-label">Location</div>
+              <div class="profile-chip-value" id="pc-eqLocation">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
+          </svg>
+          Check In
+        </div>
+        <div class="input-group">
+          <label class="input-label" for="employeeId">Employee ID</label>
+          <input type="text" id="employeeId" placeholder="e.g. EMP001" autocomplete="off" autocapitalize="characters" />
+          <span class="input-icon">
+            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4" />
+            </svg>
+          </span>
+        </div>
+        <button class="btn btn-primary" id="btn-checkin" onclick="onContinueClicked()">
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+          </svg>
+          Check In
+        </button>
+      </div>
+
+    </div><!-- /screen-landing -->
+
+
+    <!-- ============================================================
+         SCREEN 3 — BOOK / JOIN QUEUE
+    ============================================================ -->
+    <div id="screen-book" class="hidden screen-panel">
+
+      <div class="card">
+        <div class="welcome-row">
+          <div>
+            <div class="welcome-hi">Welcome back,</div>
+            <div class="welcome-name" id="bk-empName">—</div>
+            <div class="welcome-dept" id="bk-dept">—</div>
+          </div>
+          <div class="welcome-icon">
+            <svg width="26" height="26" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
+                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          </div>
+        </div>
+        <div id="bk-currentUserWarning" class="warning-banner" style="display:none;">
+          <div class="warning-banner-icon">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <div class="warning-banner-text">
+            <strong>Currently in use</strong>
+            <span id="bk-currentUserName"></span> (ID: <span id="bk-currentUserId"></span>)
+            <span style="display:block; margin-top:4px; font-size:11px; opacity:0.8;">Contact them if this is an
+              emergency.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" stroke-width="2" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6l4 2" />
+          </svg>
+          <span id="bk-title">Book Equipment</span>
+        </div>
+        <div class="duration-pills" id="bk-pills" role="group" aria-label="Select duration">
+          <button class="duration-pill" data-val="30" onclick="selectDuration(this)">30 min</button>
+          <button class="duration-pill selected" data-val="60" onclick="selectDuration(this)">1 hour</button>
+          <button class="duration-pill" data-val="120" onclick="selectDuration(this)">2 hours</button>
+          <button class="duration-pill" data-val="180" onclick="selectDuration(this)">3 hours</button>
+          <button class="duration-pill" data-val="240" onclick="selectDuration(this)">4 hours</button>
+          <button class="duration-pill" data-val="300" onclick="selectDuration(this)">5 hours</button>
+          <button class="duration-pill" data-val="1440" onclick="selectDuration(this)">1 day</button>
+          <button class="duration-pill" data-val="2880" onclick="selectDuration(this)">2 days</button>
+        </div>
+        <button id="bk-submitBtn" class="btn btn-primary">
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Confirm Booking
+        </button>
+      </div>
+
+    </div><!-- /screen-book -->
+
+
+    <!-- ============================================================
+         SCREEN 4 — MANAGE ACTIVE BOOKING
+    ============================================================ -->
+    <div id="screen-manage" class="hidden screen-panel">
+
+      <div class="card">
+        <div class="card-label">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Active Session
+        </div>
+        <div style="display:flex; justify-content:center; margin-bottom:6px;">
+          <span class="active-badge">
+            <span class="status-dot" style="background:var(--accent);"></span>In Use
+          </span>
+        </div>
+        <div class="timer-block">
+          <div class="timer-label">Expected Free Time</div>
+          <div class="timer-value" id="mg-expectedFreeTime">—</div>
+          <div class="timer-suffix">You are currently using this equipment</div>
+        </div>
+        <button class="btn btn-danger" id="btn-free" onclick="submitFreeEquipment()">
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          Free Equipment Now
+        </button>
+      </div>
+
+      <div class="card">
+        <div class="extend-label">
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" stroke-width="2" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6l4 2" />
+          </svg>
+          Need More Time?
+        </div>
+        <div class="input-group">
+          <label class="input-label" for="mg-extendDuration">Extend By</label>
+          <select id="mg-extendDuration">
+            <option value="30">30 minutes</option>
+            <option value="60" selected>1 hour</option>
+            <option value="120">2 hours</option>
+          </select>
+          <span class="select-arrow">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </span>
+        </div>
+        <button class="btn btn-secondary" id="btn-extend" onclick="submitExtend()">
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          </svg>
+          Request Extension
+        </button>
+      </div>
+
+    </div><!-- /screen-manage -->
+
+
+    <!-- ============================================================
+         SCREEN 5 — WITHDRAW FROM QUEUE
+    ============================================================ -->
+    <div id="screen-withdraw" class="hidden screen-panel">
+      <div class="card" style="text-align:center;">
+        <div class="card-label" style="justify-content:center; color:var(--s-waitlist);">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          Waitlist Position
+        </div>
+        <div class="queue-position-display">
+          <div class="queue-icon-ring">
+            <svg width="36" height="36" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div class="queue-pos-number" id="wd-queuePosition">—</div>
+          <div class="queue-pos-label">Your current position in the queue</div>
+        </div>
+        <button class="btn btn-warning" id="btn-withdraw" onclick="submitWithdraw()">
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+          Withdraw from Queue
+        </button>
+      </div>
+    </div><!-- /screen-withdraw -->
+
+  </div><!-- /container -->
+
+  <?!= include('javascript'); ?>
+
+</body>
+
+</html>

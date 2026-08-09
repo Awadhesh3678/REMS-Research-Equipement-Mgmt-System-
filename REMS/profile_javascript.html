@@ -1,0 +1,227 @@
+<script>
+  /**
+   * FILE: profile_javascript.html
+   * FUNCTIONALITY: Contains the client-side logic for the User Profile screen.
+   * Handles local authentication, fetches booking history, and dynamically renders 
+   * the Active and History lists.
+   */
+  let profileData = null;
+
+  /**
+   * Escapes HTML special characters to prevent XSS attacks.
+   * @param {string} str - The raw string to sanitize.
+   * @returns {string} The sanitized string safe for HTML injection.
+   */
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const empId = localStorage.getItem('rems_empId');
+    if (!empId) {
+      document.getElementById('loginOverlay').classList.remove('hidden');
+    } else {
+      document.getElementById('mainProfile').classList.remove('hidden');
+      loadProfile(empId);
+    }
+  });
+
+  /**
+   * Manually handles the login form submission if the user has no localStorage token.
+   * Saves their Employee ID and proceeds to fetch their profile data.
+   */
+  function submitLogin() {
+    const val = document.getElementById('loginEmpId').value.trim().replace(/[^a-zA-Z0-9\-_]/g, '');
+    if (!val) {
+      alert("Please enter a valid Employee ID.");
+      return;
+    }
+    // Save locally
+    localStorage.setItem('rems_empId', val);
+    
+    // Switch views
+    document.getElementById('loginOverlay').classList.add('hidden');
+    document.getElementById('mainProfile').classList.remove('hidden');
+    
+    loadProfile(val);
+  }
+
+  /**
+   * Logs the user out by clearing localStorage and redirecting to Home.
+   */
+  function logoutUser() {
+    localStorage.removeItem('rems_empId');
+    // Redirect to Home Dashboard
+    window.open(GLOBAL_WEB_APP_URL, "_top");
+  }
+
+  /**
+   * Fetches the user's profile and booking history from the backend.
+   * @param {string} empId - The employee's unique ID.
+   */
+  function loadProfile(empId) {
+    document.getElementById('profileLoader').style.display = 'block';
+    document.getElementById('list-active').innerHTML = '';
+    document.getElementById('list-history').innerHTML = '';
+
+    google.script.run
+      .withSuccessHandler(onProfileLoaded)
+      .withFailureHandler(err => {
+        document.getElementById('profileLoader').innerText = "Error: " + err.message;
+        // If not authorized/found, perhaps clear local storage
+        if (err.message.includes('not found')) {
+          localStorage.removeItem('rems_empId');
+          setTimeout(() => window.location.reload(), 2000);
+        }
+      })
+      .apiGetUserProfile(empId);
+  }
+
+  /**
+   * Callback fired when profile data is successfully retrieved from the backend.
+   * Updates the UI badge and delegates rendering of the two booking lists.
+   * @param {Object} data - Profile data payload.
+   */
+  function onProfileLoaded(data) {
+    if (data.error) {
+      document.getElementById('profileLoader').innerText = "Error: " + data.error;
+      return;
+    }
+    
+    profileData = data;
+    
+    // Update Header
+    document.getElementById('profName').innerText = data.employeeName || 'Unknown User';
+    document.getElementById('profId').innerText = (data.department ? data.department + ' • ' : '') + data.employeeId;
+
+    // Update Counts
+    document.getElementById('activeCount').innerText = data.activeBookings.length;
+
+    // Hide loader
+    document.getElementById('profileLoader').style.display = 'none';
+
+    // Render Lists
+    renderActiveBookings(data.activeBookings);
+    renderHistoryBookings(data.history);
+  }
+
+  /**
+   * Dynamically generates the HTML for the Active Bookings tab.
+   * Renders clickable cards that navigate to the respective equipment status page.
+   * @param {Array} bookings - List of active/waiting booking objects.
+   */
+  function renderActiveBookings(bookings) {
+    const container = document.getElementById('list-active');
+    if (!bookings || bookings.length === 0) {
+      container.innerHTML = '<div style="text-align: center; color: #94a3b8; padding: 2rem 0;">No active bookings right now.</div>';
+      return;
+    }
+
+    let html = '';
+    bookings.forEach(b => {
+      // Create link to the equipment status page
+      const targetUrl = GLOBAL_WEB_APP_URL + "?equipment_id=" + encodeURIComponent(b.equipmentId);
+      
+      let badgeClass = 'status-active';
+      if (b.status === 'Waiting') badgeClass = 'status-completed';
+
+      // Escape all dynamic values to prevent XSS
+      const safeName   = escapeHtml(b.equipmentName);
+      const safeId     = escapeHtml(b.equipmentId);
+      const safeStatus = escapeHtml(b.status);
+      const safeDate   = escapeHtml(b.date);
+      const safeStart  = escapeHtml(b.startTime);
+      const safeEnd    = escapeHtml(b.endTime);
+      const safeDur    = escapeHtml(b.duration);
+
+      html += 
+        '<a href="' + targetUrl + '" class="card glass">' +
+          '<div class="card-header">' +
+            '<div>' +
+              '<div class="card-title">' + safeName + '</div>' +
+              '<div class="card-subtitle">' + safeId + '</div>' +
+            '</div>' +
+            '<span class="status-badge ' + badgeClass + '">' + safeStatus + '</span>' +
+          '</div>' +
+          '<div class="detail-row" style="margin-top: 8px;">' +
+            '<svg class="detail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>' +
+            '<span class="detail-text">Booked for ' + safeDate + '</span>' +
+          '</div>' +
+          '<div class="detail-row">' +
+            '<svg class="detail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>' +
+            '<span class="detail-text">' + safeStart + ' – ' + safeEnd + ' (' + safeDur + 'h)</span>' +
+          '</div>' +
+        '</a>';
+    });
+    
+    container.innerHTML = html;
+  }
+
+  /**
+   * Dynamically generates the HTML for the Booking History tab.
+   * Renders non-clickable historical cards with a muted style.
+   * @param {Array} bookings - List of completed/withdrawn booking objects.
+   */
+  function renderHistoryBookings(bookings) {
+    const container = document.getElementById('list-history');
+    if (!bookings || bookings.length === 0) {
+      container.innerHTML = '<div style="text-align: center; color: #94a3b8; padding: 2rem 0;">No past bookings found.</div>';
+      return;
+    }
+
+    let html = '';
+    bookings.forEach(b => {
+      // Escape all dynamic values to prevent XSS
+      const safeName   = escapeHtml(b.equipmentName);
+      const safeId     = escapeHtml(b.equipmentId);
+      const safeStatus = escapeHtml(b.status);
+      const safeDate   = escapeHtml(b.date);
+      const safeStart  = escapeHtml(b.startTime);
+      const safeEnd    = escapeHtml(b.endTime);
+      const safeDur    = escapeHtml(b.duration);
+
+      html += 
+        '<div class="card history-card">' +
+          '<div class="card-header">' +
+            '<div>' +
+              '<div class="card-title">' + safeName + '</div>' +
+              '<div class="card-subtitle">' + safeId + '</div>' +
+            '</div>' +
+            '<span class="status-badge status-completed">' + safeStatus + '</span>' +
+          '</div>' +
+          '<div class="detail-row" style="margin-top: 8px;">' +
+            '<svg class="detail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>' +
+            '<span class="detail-text">Used on ' + safeDate + '</span>' +
+          '</div>' +
+          '<div class="detail-row">' +
+            '<svg class="detail-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>' +
+            '<span class="detail-text">' + safeStart + ' – ' + safeEnd + ' (' + safeDur + 'h)</span>' +
+          '</div>' +
+        '</div>';
+    });
+    
+    container.innerHTML = html;
+  }
+
+  /**
+   * Handles switching between the "Active" and "History" tabs.
+   * Toggles visibility of the lists and updates the active pill styling.
+   * @param {string} tabName - The identifier of the tab to show ('active' or 'history').
+   */
+  function switchTab(tabName) {
+    document.getElementById('tab-active').classList.remove('active');
+    document.getElementById('tab-history').classList.remove('active');
+    document.getElementById('tab-' + tabName).classList.add('active');
+
+    document.getElementById('list-active').classList.remove('active');
+    document.getElementById('list-history').classList.remove('active');
+    document.getElementById('list-' + tabName).classList.add('active');
+  }
+
+</script>

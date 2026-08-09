@@ -1,0 +1,272 @@
+<style>
+  /* 
+   * FILE: home_css.html
+   * FUNCTIONALITY: Contains all the CSS styling rules for the Home Dashboard.
+   * Defines the dark-mode glassmorphism aesthetic, animations, and responsive layout for the catalog.
+   */
+  :root {
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    --bg: #0f172a;
+    --surface: rgba(30, 41, 59, 0.7);
+    --border: rgba(255, 255, 255, 0.1);
+    --text: #f8fafc;
+    --text-muted: #94a3b8;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --glass-bg: rgba(15, 23, 42, 0.6);
+    --glass-border: rgba(255, 255, 255, 0.08);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+    padding-bottom: 100px; 
+  }
+
+  /* Animated Blobs */
+  .blob {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(80px);
+    z-index: -1;
+    opacity: 0.5;
+    animation: float 20s infinite alternate;
+  }
+  .blob-1 { top: -10%; left: -10%; width: 40vw; height: 40vw; background: var(--primary); animation-delay: 0s; }
+  .blob-2 { bottom: -10%; right: -10%; width: 35vw; height: 35vw; background: var(--success); animation-delay: -5s; }
+  .blob-3 { top: 40%; left: 50%; width: 30vw; height: 30vw; background: #8b5cf6; animation-delay: -10s; }
+  @keyframes float { 0% { transform: translate(0, 0) scale(1); } 100% { transform: translate(50px, 50px) scale(1.2); } }
+
+  .glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  }
+
+  /* Header */
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: 1.5rem 1rem;
+    border-bottom: 1px solid var(--glass-border);
+  }
+  .header-content { max-width: 1200px; margin: 0 auto; text-align: center; }
+  .header h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.5rem; background: linear-gradient(to right, #fff, #94a3b8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .header p { color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1rem; }
+
+  /* Search */
+  .search-container {
+    position: relative;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .search-icon {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    color: var(--text-muted);
+  }
+  .search-container input {
+    width: 100%;
+    padding: 1rem 1rem 1rem 3rem;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    color: var(--text);
+    font-size: 1rem;
+    font-family: inherit;
+    outline: none;
+    transition: all 0.3s ease;
+  }
+  .search-container input:focus { border-color: var(--primary); background: rgba(255, 255, 255, 0.1); }
+
+  /* Main Container */
+  .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+
+  /* Loading */
+  .loading-container {
+    text-align: center;
+    padding: 3rem;
+    border-radius: 16px;
+    max-width: 400px;
+    margin: 2rem auto;
+  }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid rgba(255,255,255,0.1);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 1rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Grid */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+  }
+
+  /* Card */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+  }
+  .card:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.2); box-shadow: 0 12px 40px rgba(0,0,0,0.4); background: rgba(40, 50, 70, 0.8); }
+  
+  .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
+  .card-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.25rem; }
+  .card-subtitle { font-size: 0.85rem; color: var(--text-muted); }
+  
+  .status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .status-available { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+  .status-in-use { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+  .status-maintenance { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+
+  .card-details { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; flex-grow: 1; }
+  .detail-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; color: #cbd5e1; }
+  .detail-row svg { width: 16px; height: 16px; color: var(--text-muted); }
+
+  .card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 1rem;
+    border-top: 1px solid var(--glass-border);
+    margin-top: auto;
+  }
+  .qr-mini {
+    width: 40px; height: 40px;
+    border-radius: 6px;
+    background: #fff;
+    padding: 2px;
+  }
+  .action-text {
+    font-size: 0.85rem;
+    color: var(--primary);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .card:hover .action-text { color: #818cf8; }
+
+  /* Floating Scanner FAB (PhonePe style) */
+  .scan-fab {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 1rem 2rem;
+    border-radius: 9999px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    box-shadow: 0 10px 25px rgba(79, 70, 229, 0.4);
+    z-index: 50;
+    transition: all 0.2s;
+  }
+  .scan-fab:hover { background: var(--primary-hover); transform: translateX(-50%) scale(1.05); }
+  .scan-fab svg { width: 24px; height: 24px; }
+
+  /* Modal Overlay */
+  .modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(8px);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  .modal-overlay.active { opacity: 1; pointer-events: auto; }
+  
+  .modal {
+    width: 100%;
+    max-width: 500px;
+    border-radius: 20px;
+    padding: 1.5rem;
+    position: relative;
+    transform: translateY(20px);
+    transition: transform 0.3s;
+  }
+  .modal-overlay.active .modal { transform: translateY(0); }
+
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+  .modal-header h2 { font-size: 1.25rem; font-weight: 600; }
+  .close-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 2rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+  .close-btn:hover { color: white; }
+
+  /* Scanner Container */
+  .scanner-container {
+    width: 100%;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #000;
+    aspect-ratio: 1; /* Keep it square */
+    position: relative;
+  }
+  /* Overrides for html5-qrcode built-in UI */
+  #reader { width: 100%; height: 100%; border: none !important; }
+  #reader__dashboard_section_csr { display: flex; flex-direction: column; gap: 10px; padding: 10px !important; }
+  #reader__dashboard_section_csr span, #reader__dashboard_section_csr select { color: #000; } /* Make default UI visible if it shows */
+  #reader__dashboard_section_swaplink { display: none !important; }
+  
+  .scanner-hint {
+    text-align: center;
+    margin-top: 1rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+</style>

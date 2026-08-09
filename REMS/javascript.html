@@ -1,0 +1,464 @@
+<script>
+  /**
+   * FILE: javascript.html
+   * FUNCTIONALITY: The primary client-side engine for the Equipment Status SPA.
+   * Handles user authentication via localStorage, state transitions between the different
+   * screens (Landing, Manage, Book, Withdraw), and all complex Google Apps Script 
+   * API calls for booking operations.
+   */
+
+  // --- STATE ---
+  let equipmentData  = null;
+  let currentEmpId   = localStorage.getItem('rems_empId') || '';
+  let selectedDurMin = 60;
+
+  // =========================================================
+  // PROGRESS BAR — header shimmer bar
+  // =========================================================
+  /** Shows the subtle indeterminate progress bar in the header. */
+  function showProgress()  { document.getElementById('progressBar').classList.add('active'); }
+  /** Hides the subtle indeterminate progress bar in the header. */
+  function hideProgress()  { document.getElementById('progressBar').classList.remove('active'); }
+
+  // =========================================================
+  // SKELETON — shown on first page load
+  // =========================================================
+  let _skeletonHidden = false;
+  /**
+   * Fades out the initial skeleton loaders once the equipment data is fetched.
+   * Guarded to ensure it only runs once per page load.
+   */
+  function hideSkeleton() {
+    if (_skeletonHidden) return;
+    const sk = document.getElementById('screen-skeleton');
+    if (!sk) return;
+    _skeletonHidden = true;
+    sk.style.transition = 'opacity 0.3s ease';
+    sk.style.opacity    = '0';
+    setTimeout(() => { sk.style.display = 'none'; }, 320);
+  }
+
+  // =========================================================
+  // ACTION OVERLAY — context-aware label + sub
+  // =========================================================
+  const OVERLAY_MESSAGES = {
+    init:     { label: 'Loading Equipment…',     sub: 'Fetching latest status'       },
+    checkin:  { label: 'Verifying Employee…',    sub: 'Checking your credentials'    },
+    booking:  { label: 'Confirming Booking…',    sub: 'Reserving equipment for you'  },
+    queue:    { label: 'Joining Waitlist…',       sub: 'Adding you to the queue'      },
+    extend:   { label: 'Requesting Extension…',  sub: 'Updating your session time'   },
+    free:     { label: 'Releasing Equipment…',   sub: 'Freeing up for others'        },
+    withdraw: { label: 'Withdrawing…',            sub: 'Removing you from the queue' },
+    reload:   { label: 'Refreshing Status…',     sub: 'Getting the latest data'      },
+  };
+
+  // Single module-level timeout handle for the safety net
+  let _overlayGasTimeout = null;
+
+  /**
+   * Displays the full-screen loading overlay with a context-specific message.
+   * Includes a 30-second safety timeout in case the GAS backend hangs.
+   * @param {string} contextKey - Key from OVERLAY_MESSAGES to determine the text shown.
+   */
+  function showOverlay(contextKey) {
+    const msg = OVERLAY_MESSAGES[contextKey] || { label: 'Processing…', sub: 'Please wait a moment' };
+    document.getElementById('overlay-label').textContent = msg.label;
+    document.getElementById('overlay-sub').textContent   = msg.sub;
+    const el = document.getElementById('screen-loading');
+
+    // BUG FIX 1: Cancel any pending _hideTimer before re-showing.
+    // Without this, a previous hideOverlay()'s 220ms timer can fire AFTER
+    // showOverlay() and add 'hidden', permanently freezing the overlay.
+    clearTimeout(el._hideTimer);
+
+    el.classList.remove('hidden');
+    // Double-RAF: lets browser paint opacity:0 first, then transition to 1
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('is-open')));
+    showProgress();
+
+    // BUG FIX 2: GAS safety timeout.
+    // Google Apps Script calls can silently hang (quota exceeded, cold start,
+    // execution limit). If no response arrives within 30s, auto-dismiss with
+    // a friendly error instead of leaving the user staring at a frozen overlay.
+    clearTimeout(_overlayGasTimeout);
+    _overlayGasTimeout = setTimeout(() => {
+      hideOverlay();
+      showFeedback('Server took too long to respond. Please try again.', 'error');
+    }, 30000);
+  }
+
+  /**
+   * Hides the full-screen loading overlay smoothly and clears safety timeouts.
+   */
+  function hideOverlay() {
+    clearTimeout(_overlayGasTimeout);   // cancel the safety timeout
+    const el = document.getElementById('screen-loading');
+    el.classList.remove('is-open');     // triggers CSS transition back to opacity:0
+    clearTimeout(el._hideTimer);
+    el._hideTimer = setTimeout(() => el.classList.add('hidden'), 220);
+    hideProgress();
+  }
+
+  // =========================================================
+  // INLINE BUTTON SPINNER
+  // =========================================================
+  /**
+   * Replaces a button's content with a loading spinner while an action is processing.
+   * @param {string} btnId - The DOM ID of the button.
+   * @param {boolean} isDark - Whether to use the dark-mode spinner style.
+   * @returns {Function} A closure that restores the button to its original state.
+   */
+  function startBtnLoad(btnId, isDark) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return () => {};
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    const spinnerClass = isDark ? 'btn-spinner dark' : 'btn-spinner';
+    btn.innerHTML = `<span class="${spinnerClass}"></span>`;
+    return () => {
+      btn.innerHTML = original;
+      btn.disabled  = false;
+    };
+  }
+
+  // =========================================================
+  // SCREEN MANAGER
+  // =========================================================
+  const ALL_SCREENS = ['screen-landing', 'screen-manage', 'screen-book', 'screen-withdraw'];
+
+  /**
+   * Handles transitioning between the different UI screens of the SPA.
+   * Hides all screens, then reveals the target screen, re-triggering CSS animations.
+   * @param {string} screenId - The DOM ID of the screen to show (e.g., 'screen-book').
+   */
+  function showScreen(screenId) {
+    ALL_SCREENS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.classList.add('hidden');
+        el.classList.remove('screen-panel'); // reset animation
+      }
+    });
+    hideOverlay();
+    const target = document.getElementById(screenId);
+    if (target) {
+      target.classList.remove('hidden');
+      // Force reflow to re-trigger CSS animation
+      void target.offsetWidth;
+      target.classList.add('screen-panel');
+    }
+  }
+
+  // =========================================================
+  // DURATION PILL SELECTION
+  // =========================================================
+  /**
+   * Handles the visual selection of a duration pill (e.g. 1 hour, 2 hours).
+   * Updates the global selectedDurMin state.
+   * @param {HTMLElement} el - The pill element clicked.
+   */
+  function selectDuration(el) {
+    document.querySelectorAll('.duration-pill').forEach(p => p.classList.remove('selected'));
+    el.classList.add('selected');
+    selectedDurMin = parseInt(el.dataset.val, 10);
+  }
+
+  // =========================================================
+  // INIT — First Load (shows skeleton, no dark overlay)
+  // =========================================================
+  document.addEventListener('DOMContentLoaded', () => {
+    // Wire up Enter key on employee ID input
+    const input = document.getElementById('employeeId');
+    if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') onContinueClicked(); });
+
+    if (!EQUIPMENT_ID) {
+      hideSkeleton();
+      showScreen('screen-landing');
+      showFeedback('No equipment ID found. Please scan a valid QR code.', 'error');
+      return;
+    }
+
+    // Show skeleton + top progress bar (NOT dark overlay)
+    showProgress();
+    google.script.run
+      .withSuccessHandler(onEquipmentLoaded)
+      .withFailureHandler(handleError)
+      .apiGetEquipmentStatus(EQUIPMENT_ID);
+  });
+
+  /**
+   * Callback fired when the backend successfully returns the equipment status.
+   * Hydrates the UI with the equipment details (Name, Location, Category)
+   * and delegates to the appropriate next screen based on login state.
+   * @param {Object} res - The equipment data payload.
+   */
+  function onEquipmentLoaded(res) {
+    hideProgress();
+    hideSkeleton();
+
+    if (res.error) {
+      showFeedback(res.error, 'error');
+      showScreen('screen-landing');
+      return;
+    }
+    equipmentData = res;
+
+    const nameVal     = res.equipmentName || '—';
+    const locationVal = res.location      || '—';
+    const categoryVal = res.category      || '—';
+
+    setEl('ui-eqName',     nameVal);
+    setEl('ui-eqLocation', locationVal);
+    setEl('ui-eqCategory', categoryVal);
+    setEl('pc-eqName',     nameVal);
+    setEl('pc-eqCategory', categoryVal);
+    setEl('pc-eqLocation', locationVal);
+
+    const badge     = document.getElementById('ui-quickStatus');
+    const statusKey = (res.currentStatus || 'unknown').toLowerCase();
+    badge.innerHTML = `<span class="status-dot"></span>${(res.currentStatus || 'Unknown').toUpperCase()}`;
+    badge.className = 'status-badge ' + statusKey;
+
+    const qContainer = document.getElementById('ui-queueContainer');
+    const qCount     = document.getElementById('ui-queueCount');
+    if (res.queueCount && res.queueCount > 0) {
+      qCount.innerText         = res.queueCount;
+      qContainer.style.display = 'block';
+    } else {
+      qContainer.style.display = 'none';
+    }
+
+    if (currentEmpId) document.getElementById('employeeId').value = currentEmpId;
+
+    showScreen('screen-landing');
+  }
+
+  // =========================================================
+  // CHECK IN BUTTON
+  // =========================================================
+  let restoreCheckin = null;
+
+  /**
+   * Fired when the user clicks "Continue" on the landing screen.
+   * Validates the input and calls the backend to verify the Employee ID.
+   */
+  function onContinueClicked() {
+    const empId = document.getElementById('employeeId').value.trim().replace(/[^a-zA-Z0-9\-_]/g, '');
+    if (!empId) {
+      showFeedback('Please enter a valid Employee ID.', 'error');
+      document.getElementById('employeeId').focus();
+      return;
+    }
+    currentEmpId = empId;
+    localStorage.setItem('rems_empId', empId);
+
+    // Inline spinner on Check In button + overlay behind
+    restoreCheckin = startBtnLoad('btn-checkin');
+    showOverlay('checkin');
+
+    google.script.run
+      .withSuccessHandler(onEmployeeChecked)
+      .withFailureHandler(handleError)
+      .apiCheckEmployee(EQUIPMENT_ID, empId);
+  }
+
+  /**
+   * Callback fired when the backend returns the employee's verification status.
+   * Routes the user to the correct screen (Book, Manage, or Withdraw) based on 
+   * their active booking state or queue position.
+   * @param {Object} res - The employee state payload.
+   */
+  function onEmployeeChecked(res) {
+    if (restoreCheckin) { restoreCheckin(); restoreCheckin = null; }
+    hideOverlay();
+
+    if (res.error) {
+      showFeedback(res.error, 'error');
+      showScreen('screen-landing');
+      return;
+    }
+    
+    // User is logged in successfully, reveal the Profile Icon in the header
+    const profileIcon = document.getElementById('headerProfileIcon');
+    if (profileIcon) profileIcon.classList.remove('hidden');
+
+    if (res.hasActiveBooking) {
+      setEl('mg-expectedFreeTime', res.bookingInfo.endTime);
+      showScreen('screen-manage');
+
+    } else if (res.inQueue) {
+      setEl('wd-queuePosition', res.queuePosition);
+      showScreen('screen-withdraw');
+
+    } else {
+      setEl('bk-empName', res.employeeName || '');
+      setEl('bk-dept',    res.department   || '');
+
+      const isAvailable = (equipmentData.currentStatus || '').toLowerCase() === 'available';
+      const titleEl     = document.getElementById('bk-title');
+      const submitEl    = document.getElementById('bk-submitBtn');
+
+      if (isAvailable) {
+        titleEl.textContent = 'Book Equipment';
+        submitEl.innerHTML  = `
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>Confirm Booking`;
+        submitEl.onclick = submitBooking;
+        document.getElementById('bk-currentUserWarning').style.display = 'none';
+      } else {
+        titleEl.textContent = 'Join Waitlist';
+        submitEl.innerHTML  = `
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>Join Queue`;
+        submitEl.onclick = submitQueue;
+
+        if (equipmentData.currentUser) {
+          setEl('bk-currentUserName', equipmentData.currentUser);
+          setEl('bk-currentUserId',   equipmentData.currentUserId || 'Unknown');
+          document.getElementById('bk-currentUserWarning').style.display = 'flex';
+        } else {
+          document.getElementById('bk-currentUserWarning').style.display = 'none';
+        }
+      }
+      showScreen('screen-book');
+    }
+  }
+
+  // =========================================================
+  // ACTIONS
+  // =========================================================
+  /** Submits a request to book the equipment for the currently selected duration. */
+  function submitBooking() {
+    showOverlay('booking');
+    google.script.run
+      .withSuccessHandler(onActionDone)
+      .withFailureHandler(handleError)
+      .apiBookEquipment({ equipmentId: EQUIPMENT_ID, employeeId: currentEmpId, durationMin: selectedDurMin });
+  }
+
+  /** Submits a request to join the waitlist queue for the equipment. */
+  function submitQueue() {
+    showOverlay('queue');
+    google.script.run
+      .withSuccessHandler(onActionDone)
+      .withFailureHandler(handleError)
+      .apiJoinQueue({ equipmentId: EQUIPMENT_ID, employeeId: currentEmpId, durationMin: selectedDurMin });
+  }
+
+  /** Submits a request to withdraw the current user from the waitlist queue. */
+  function submitWithdraw() {
+    const restore = startBtnLoad('btn-withdraw');
+    showOverlay('withdraw');
+    google.script.run
+      .withSuccessHandler(res => { restore(); onActionDone(res); })
+      .withFailureHandler(err  => { restore(); handleError(err); })
+      .apiWithdrawQueue({ equipmentId: EQUIPMENT_ID, employeeId: currentEmpId });
+  }
+
+  /** Submits a request to release (free) the equipment before the booking time is up. */
+  function submitFreeEquipment() {
+    const restore = startBtnLoad('btn-free');
+    showOverlay('free');
+    google.script.run
+      .withSuccessHandler(res => { restore(); onActionDone(res); })
+      .withFailureHandler(err  => { restore(); handleError(err); })
+      .apiReleaseEquipment({ equipmentId: EQUIPMENT_ID, employeeId: currentEmpId });
+  }
+
+  /** Submits a request to extend the current active booking time. */
+  function submitExtend() {
+    const extendVal = parseInt(document.getElementById('mg-extendDuration').value, 10);
+    const restore   = startBtnLoad('btn-extend', true); // dark spinner for secondary btn
+    showOverlay('extend');
+    google.script.run
+      .withSuccessHandler(res => { restore(); onActionDone(res); })
+      .withFailureHandler(err  => { restore(); handleError(err); })
+      .apiExtendBooking({ equipmentId: EQUIPMENT_ID, employeeId: currentEmpId, durationMin: extendVal });
+  }
+
+  /**
+   * Generic callback fired when any action (book, extend, release, queue) completes.
+   * Shows a success toast and immediately triggers a background status reload.
+   * @param {Object} res - The result payload from the backend action.
+   */
+  function onActionDone(res) {
+    hideOverlay();
+    if (res.error) {
+      showFeedback(res.error, 'error');
+      showScreen('screen-landing');
+      return;
+    }
+    showFeedback(res.message, 'success');
+
+    // ─── PARALLEL FETCH PATTERN ───────────────────────────────────
+    // Fire the status reload immediately while the toast is displayed.
+    // Navigate to landing as soon as BOTH are true:
+    //   (a) reload data has arrived from the server, AND
+    //   (b) at least MIN_TOAST_MS have elapsed (so user can read the toast).
+    // This removes the old 1,800ms idle wait between two sequential GAS calls.
+    // ─────────────────────────────────────────────────────────────────
+    const MIN_TOAST_MS = 900;
+    let   reloadResult = null;
+    let   timerFired   = false;
+
+    function tryNavigate() {
+      if (!reloadResult || !timerFired) return;
+      onEquipmentLoaded(reloadResult);
+    }
+
+    // BUG FIX: Do NOT call showProgress() here.
+    // hideOverlay() already called hideProgress(). Re-calling showProgress()
+    // causes a visible top-bar flicker that misleads users.
+    // Timeout safety: Force navigate after 10s if the reload call hangs.
+    const safetyTimer = setTimeout(() => { if (!reloadResult) handleError({message: 'Request timed out.'}); }, 10000);
+    setTimeout(() => { timerFired = true; tryNavigate(); }, MIN_TOAST_MS);
+
+    google.script.run
+      .withSuccessHandler(reloadRes => { clearTimeout(safetyTimer); reloadResult = reloadRes; tryNavigate(); })
+      .withFailureHandler(handleError)
+      .apiGetEquipmentStatus(EQUIPMENT_ID);
+  }
+
+  // =========================================================
+  // UTILITIES
+  // =========================================================
+  /** Helper to safely set the innerText of a DOM element by ID. */
+  function setEl(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.innerText = text;
+  }
+
+  /** Helper to catch and display unhandled backend errors cleanly. */
+  function handleError(err) {
+    hideOverlay();
+    hideProgress();
+    hideSkeleton();
+    const msg = (err && err.message) ? err.message : 'An unexpected error occurred.';
+    showFeedback(msg, 'error');
+    showScreen('screen-landing');
+  }
+
+  /**
+   * Displays an animated toast notification at the bottom of the screen.
+   * @param {string} msg - The message to display.
+   * @param {string} type - 'success', 'error', or 'info' (determines color/icon).
+   */
+  function showFeedback(msg, type) {
+    const fb = document.getElementById('feedbackMsg');
+    if (!fb) return;
+    const icons = {
+      success: `<svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>`,
+      error:   `<svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>`,
+      info:    `<svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`,
+    };
+    fb.innerHTML = (icons[type] || '') + `<span>${msg}</span>`;
+    fb.className = 'message ' + type;
+    clearTimeout(fb._timer);
+    fb._timer = setTimeout(() => fb.classList.add('hidden'), 5000);
+  }
+
+</script>
